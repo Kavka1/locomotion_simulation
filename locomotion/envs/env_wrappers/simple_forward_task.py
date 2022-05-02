@@ -27,8 +27,11 @@ class SimpleForwardTask(object):
     """Initializes the task."""
     self.current_base_pos = np.zeros(3)
     self.last_base_pos = np.zeros(3)
+    self.episode_step = 0
+    self._max_episode_len = 1000
 
   def __call__(self, env):
+    self.episode_step += 1
     return self.reward(env)
 
   def reset(self, env):
@@ -36,6 +39,7 @@ class SimpleForwardTask(object):
     self._env = env
     self.last_base_pos = env.robot.GetBasePosition()
     self.current_base_pos = self.last_base_pos
+    self.episode_step = 0
 
   def update(self, env):
     """Updates the internal state of the task."""
@@ -50,7 +54,7 @@ class SimpleForwardTask(object):
     """
     rot_quat = env.robot.GetBaseOrientation()
     rot_mat = env.pybullet_client.getMatrixFromQuaternion(rot_quat)
-    return rot_mat[-1] < 0.85
+    return rot_mat[-1] < 0.85 or self.episode_step > self._max_episode_len
 
 
   def reward(self, env):

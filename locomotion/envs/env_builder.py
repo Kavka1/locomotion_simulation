@@ -47,7 +47,9 @@ def build_regular_env(robot_class,
 
   sensors = [
       robot_sensors.BaseDisplacementSensor(),
-      robot_sensors.IMUSensor(),
+      robot_sensors.IMUSensor(
+          channels=['Rcos', 'Rsin', 'Pcos', 'Psin'],
+      ),
       robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
   ]
 

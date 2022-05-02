@@ -4,10 +4,13 @@ from collections import deque
 import random
 import numpy as np
 import torch
+import yaml
 import torch.nn as nn
+import datetime
 import torch.optim as optim
 from torch.distributions import Normal
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 
 def check_path(path: str) -> None:
@@ -76,8 +79,9 @@ class StochasticPolicy(nn.Module):
         arctanh_action = dist.rsample()
 
         action = torch.tanh(arctanh_action)
-        logprob = dist.log_prob(arctanh_action) - torch.log(1 - action**2 + 1e-6)
-        logprob = logprob.sum(dim=-1, keepdim=True)
+        logprob = dist.log_prob(arctanh_action).sum(dim=-1, keepdim=True)
+        squashed_correction = torch.log(1 - action**2 + 1e-6).sum(dim=-1, keepdim=True)
+        logprob = logprob - squashed_correction
         
         return action, logprob
 
@@ -233,7 +237,6 @@ class SAC(object):
 
         self._init_model()
         self._init_optimizer()
-        self._init_env()
         self._init_logger()
 
     def _init_model(self) -> None:
@@ -246,7 +249,6 @@ class SAC(object):
         self.optimizer_policy = optim.Adam(self.policy.parameters(), lr=self.lr)
         self.optimizer_Q = optim.Adam(self.value.parameters(), lr=self.lr)
         self.optimizer_alpha = optim.Adam([self.log_alpha], lr=self.lr)
-        self.optimizer_dynamic = optim.Adam(self.dynamic.parameters(), lr=self.lr)
 
     def _init_logger(self) -> None:
         self.logger_loss_q = 0.
@@ -255,15 +257,16 @@ class SAC(object):
         self.logger_alpha = self.alpha.item()
         self.update_count = 0
 
-    def train_ac(self, buffer: Buffer, obs_filter: MeanStdFilter) -> Dict:
+    def train_ac(self, buffer: Buffer) -> Dict:
         if len(buffer) < self.batch_size:
-            return 0., 0.
+            return {
+            'loss_q': 0, 
+            'loss_policy': 0, 
+            'loss_alpha': 0, 
+            'alpha': self.logger_alpha
+        }
 
         obs, a, r, done, obs_ = buffer.sample(self.batch_size)
-
-        obs = obs_filter.trans_batch(obs)
-        obs_ = obs_filter.trans_batch(obs_)
-
         obs, a, r, done, obs_ = array2tensor(obs, a, r, done, obs_, self.device)
 
         with torch.no_grad():
@@ -295,12 +298,12 @@ class SAC(object):
 
             self.alpha = torch.exp(self.log_alpha)
 
-            soft_update(self.value, self.value_tar, self.tau)
-
             self.logger_alpha = self.alpha.item()
             self.logger_loss_alpha = loss_alpha.item()
             self.logger_loss_policy = loss_policy.item()
             
+        soft_update(self.value, self.value_tar, self.tau)
+
         return {
             'loss_q': self.logger_loss_q, 
             'loss_policy': self.logger_loss_policy, 
@@ -308,25 +311,24 @@ class SAC(object):
             'alpha': self.logger_alpha
         }
 
-    def evaluate(self, env, action_high, episodes: int, obs_filter: MeanStdFilter) -> float:
+    def evaluate(self, env, action_high, episodes: int) -> float:
         reward = 0
         for i_episode in range(episodes):
             done = False
             obs = env.reset()
-            obs = obs_filter(obs)
+            step = 0
             while not done:
                 action = self.policy.act(obs, with_noise=False)
                 next_obs, r, done, info = env.step(action * action_high)
                 reward += r
-                next_obs = obs_filter(next_obs)
                 obs = next_obs
+                step += 1
         return reward / episodes
 
     def save_policy(self, path: str, remark: str) -> None:
         check_path(path)
         torch.save(self.policy.state_dict(), path+f'policy_{remark}')
         print(f"-------Model of all individuals saved to {path}-------")
-
 
 
 from absl import app
@@ -362,71 +364,92 @@ def main():
         'model_config': {
             'o_dim': None,
             'a_dim': None,
-            'policy_hidden_layers': [128, 128],
-            'value_hidden_layers': [128, 128],
+            'policy_hidden_layers': [256, 256],
+            'value_hidden_layers': [256, 256],
             'a_min': -1.0,
             'a_max': 1.0,
-            'logstd_min': -2,
-            'logstd_max': 20,
+            'logstd_min': -20,
+            'logstd_max': 2,
         },
-        'buffer_size': 1e6,
+        'seed': 10,
+        'manual_action_bond': 10,
+        'buffer_size': 1000000,
         'lr': 0.0003,
-        'gamma': 0.99,
+        'gamma': 0.999,
         'tau': 0.001,
         'batch_size': 256,
-        'initial_alpha': 1,
+        'initial_alpha': 10,
         'train_policy_delay': 2,
-        'device': 'cuda',
-        'max_timesteps': 5e6,
-        'eval_interval': 50000,
+        'device': 'cpu',
+        'max_timesteps': 5000000,
+        'eval_interval': 5000,
         'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/test_sac/'
+        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/sac_forward_task/'
     }
+    
+    np.random.seed(config['seed'])
+    torch.manual_seed(config['seed'])
 
-    robot = ROBOT_CLASS_MAP[FLAGS.robot_type]
-    motor_control_mode = MOTOR_CONTROL_MODE_MAP[FLAGS.motor_control_mode]
+    config.update({
+        'exp_path': config['result_path'] + f"{datetime.datetime.now().strftime('%m-%d_%H-%M')}/"
+    })
+    check_path(config['exp_path'])
+    logger = SummaryWriter(config['exp_path'])
+
+    robot = a1.A1
     env = env_builder.build_regular_env(robot,
-                                        motor_control_mode=motor_control_mode,
-                                        enable_rendering=True,
-                                        on_rack=FLAGS.on_rack,
+                                        motor_control_mode=robot_config.MotorControlMode.TORQUE,
+                                        enable_rendering=False,
+                                        on_rack=False,
                                         wrap_trajectory_generator=False)
-    action_low, action_high = env.action_space.low, env.action_space.high
-    action_median = (action_low + action_high) / 2.
 
     config['model_config'].update({
         'o_dim': env.observation_space.shape[0],
         'a_dim': env.action_space.shape[0]
     })
+    with open(config['exp_path'] + 'config.yaml', 'w', encoding='utf-8') as f:
+        yaml.safe_dump(config, f, indent=2)
+
+
     agent = SAC(config)
-    obs_filter = MeanStdFilter(shape=config['model_config']['o_dim'])
+    #obs_filter = MeanStdFilter(shape=config['model_config']['o_dim'])
     buffer = Buffer(memory_size=config['buffer_size'])
 
 
     total_step, total_episode = 0, 0
+    episode_step, episode_r = 0, 0
     best_score = 0
     obs = env.reset()
     while total_step < config['max_timesteps']:
-        normalized_obs = obs_filter(obs)
-        action = agent.policy.act(normalized_obs, True)
-        transferred_action = action * action_high[0]
+        action = agent.policy.act(obs, True)
+        transferred_action = action * config['manual_action_bond']
         next_obs, reward, done, info = env.step(transferred_action)
-
         buffer.save_trans((obs, action, reward, done, next_obs))
-        loss_dict = agent.train_ac(buffer, obs_filter)
+        loss_dict = agent.train_ac(buffer)
+
+        episode_r += reward
+        episode_step += 1
 
         if done:
+            if total_episode % 100 == 0:
+                print(f"- - - Episode: {total_episode} Episode Step: {episode_step} Episode R: {episode_r} - - -")
+            episode_r = episode_step = 0
             total_episode += 1
             obs = env.reset()
         else:
             obs = next_obs
 
         if total_step % config['eval_interval'] == 0:
-            eval_score = agent.evaluate(env, action_high[0], config['eval_episode'], obs_filter)
+            eval_score = agent.evaluate(env, config['manual_action_bond'], config['eval_episode'])
             if eval_score > best_score:
-                agent.save_policy(config['result_path'], 'best')
-                obs_filter.save_filter(config['result_path'], 'best')
+                agent.save_policy(config['exp_path'], 'best')
                 best_score = eval_score
 
-            print(f"Step: {total_step} Episode: {total_episode} Eval_Return: {eval_score} Loss: {[key+': '+value for key, value in list(loss_dict.items())]}")
+            print(f"| Step: {total_step} | Episode: {total_episode} | Eval_Return: {eval_score} | Loss: {loss_dict} |")
+            logger.add_scalar('Eval/Eval_Return', eval_score, total_step)
+            for loss_name, loss_value in list(loss_dict.items()):
+                logger.add_scalar(f'Train/{loss_name}', loss_value, total_step)
 
         total_step += 1
+
+main()

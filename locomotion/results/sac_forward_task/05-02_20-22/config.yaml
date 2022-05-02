@@ -1,0 +1,28 @@
+batch_size: 256
+buffer_size: 1000000
+device: cuda
+eval_episode: 10
+eval_interval: 5000
+exp_path: /home/xukang/Project/locomotion_simulation/locomotion/results/sac_forward_task/05-02_20-22/
+gamma: 0.999
+initial_alpha: 10
+lr: 0.0003
+manual_action_bond: 10
+max_timesteps: 5000000
+model_config:
+  a_dim: null
+  a_max: 1.0
+  a_min: -1.0
+  logstd_max: 2
+  logstd_min: -20
+  o_dim: null
+  policy_hidden_layers:
+  - 256
+  - 256
+  value_hidden_layers:
+  - 256
+  - 256
+result_path: /home/xukang/Project/locomotion_simulation/locomotion/results/sac_forward_task/
+seed: 10
+tau: 0.001
+train_policy_delay: 2
