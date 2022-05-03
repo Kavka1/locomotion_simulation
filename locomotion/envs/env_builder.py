@@ -19,7 +19,9 @@ from locomotion.envs.env_wrappers import observation_dictionary_to_array_wrapper
 from locomotion.envs.env_wrappers import trajectory_generator_wrapper_env
 from locomotion.envs.env_wrappers import simple_openloop
 from locomotion.envs.env_wrappers import simple_forward_task
-from locomotion.envs.sensors import robot_sensors
+from locomotion.envs.sensors import robot_sensors, sensor
+from locomotion.envs.sensors import sensor_wrappers
+from locomotion.envs.sensors import environment_sensors
 from locomotion.robots import a1
 from locomotion.robots import laikago
 from locomotion.robots import robot_config
@@ -46,11 +48,10 @@ def build_regular_env(robot_class,
       simulation_parameters=sim_params)
 
   sensors = [
-      robot_sensors.BaseDisplacementSensor(),
-      robot_sensors.IMUSensor(
-          channels=['Rcos', 'Rsin', 'Pcos', 'Psin'],
-      ),
-      robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
+      sensor_wrappers.HistoricSensorWrapper(robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True), num_history=3),
+      sensor_wrappers.HistoricSensorWrapper(robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS), num_history=3),
+      sensor_wrappers.HistoricSensorWrapper(robot_sensors.IMUSensor(), num_history=3),
+      sensor_wrappers.HistoricSensorWrapper(environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS), num_history=3),
   ]
 
   task = simple_forward_task.SimpleForwardTask()
