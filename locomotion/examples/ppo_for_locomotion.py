@@ -1,7 +1,7 @@
-from typing import List, Tuple, Dict, Union
+from typing import List, Dict, Tuple, Union
 import numpy as np
-import torch
 import yaml
+import torch
 import datetime
 from torch.utils.tensorboard import SummaryWriter
 
@@ -16,8 +16,9 @@ from locomotion.robots import a1
 from locomotion.robots import laikago
 from locomotion.robots import robot_config
 
-from locomotion.agents.sac import SAC
-from locomotion.agents.utils import check_path, Buffer
+from locomotion.agents.ppo import PPO
+from locomotion.agents.utils import check_path
+
 
 
 FLAGS = flags.FLAGS
@@ -46,23 +47,25 @@ def main():
             'value_hidden_layers': [256, 256],
             'a_min': -1.0,
             'a_max': 1.0,
-            'logstd_min': -20,
-            'logstd_max': 2,
         },
         'seed': 10,
-        'manual_action_bound': 10,
-        'buffer_size': 1000000,
+        'num_workers': 10,
+        'manual_action_scale': 10,
         'lr': 0.0003,
         'gamma': 0.99,
         'tau': 0.001,
+        'action_std': 0.4,
+        'ratio_clip': 0.25,
+        'temperature_coeff': 0.1,
+        'num_epoch': 10,
         'batch_size': 512,
         'initial_alpha': 10,
         'train_policy_delay': 2,
-        'device': 'cuda',
-        'max_timesteps': 1000000,
-        'eval_interval': 5000,
+        'device': 'cpu',
+        'max_timesteps': 2000000,
+        'eval_iteration_interval': 1,
         'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/sac_forward_task/'
+        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task/'
     }
     
     np.random.seed(config['seed'])
@@ -88,46 +91,29 @@ def main():
     with open(config['exp_path'] + 'config.yaml', 'w', encoding='utf-8') as f:
         yaml.safe_dump(config, f, indent=2)
 
+    agent = PPO(config)
+    agent._init_workers(env, config['eval_episode'])
 
-    agent = SAC(config)
-    #obs_filter = MeanStdFilter(shape=config['model_config']['o_dim'])
-    buffer = Buffer(memory_size=config['buffer_size'])
-
-
-    total_step, total_episode = 0, 0
-    episode_step, episode_r = 0, 0
+    total_step, total_episode, total_iteration = 0, 0, 0
     best_score = 0
-    obs = env.reset()
     while total_step < config['max_timesteps']:
-        action = agent.policy.act(obs, True)
-        transferred_action = action * config['manual_action_bound']
-        next_obs, reward, done, info = env.step(transferred_action)
-        buffer.save_trans((obs, action, reward, done, next_obs))
-        loss_dict = agent.train_ac(buffer)
+        train_score, worker_scores, loss_pi, loss_v = agent.roll_update()
 
-        episode_r += reward
-        episode_step += 1
+        total_step = agent.total_steps
+        total_episode = agent.total_episodes
 
-        if done:
-            if total_episode % 100 == 0:
-                print(f"- - - Episode: {total_episode} Episode Step: {episode_step} Episode R: {episode_r} - - -")
-            episode_r = episode_step = 0
-            total_episode += 1
-            obs = env.reset()
-        else:
-            obs = next_obs
-
-        if total_step % config['eval_interval'] == 0:
-            eval_score = agent.evaluate(env, config['manual_action_bound'], config['eval_episode'])
+        if total_iteration % config['eval_iteration_interval'] == 0:
+            eval_score = agent.evaluation(env, config['eval_episode'])
             if eval_score > best_score:
                 agent.save_policy(config['exp_path'], 'best')
                 best_score = eval_score
 
-            print(f"| Step: {total_step} | Episode: {total_episode} | Eval_Return: {eval_score} | Loss: {loss_dict} |")
+            print(f"| Step: {total_step} | Episode: {total_episode} | Eval_Return: {eval_score} | Loss_pi: {loss_pi} | Loss_v: {loss_v}")
+            logger.add_scalar('Eval/Train_Return', train_score, total_step)
             logger.add_scalar('Eval/Eval_Return', eval_score, total_step)
-            for loss_name, loss_value in list(loss_dict.items()):
-                logger.add_scalar(f'Train/{loss_name}', loss_value, total_step)
+            logger.add_scalar('Train/loss_pi', loss_pi, total_step)
+            logger.add_scalar('Train/loss_v', loss_v, total_step)
 
-        total_step += 1
+        total_iteration += 1
 
 main()
