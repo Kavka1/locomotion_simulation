@@ -116,17 +116,6 @@ class FixStdGaussianPolicy(nn.Module):
         #        nn.init.orthogonal_(m.weight)
 
 
-    def act(self, obs: np.array, with_noise: True) -> np.array:
-        obs = torch.from_numpy(obs).float().to(self.device)
-        with torch.no_grad():
-            if with_noise:
-                mean = self.model(obs)
-                dist = Normal(mean, self.ac_std)
-                action = dist.sample()
-            else:
-                action = self.model(obs)
-        return action
-
     def __call__(self, obs: torch.tensor) -> torch.distributions.Distribution:
         mean = self.model(obs)
         dist = Normal(mean, self.ac_std)

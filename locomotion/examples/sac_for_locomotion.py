@@ -9,7 +9,8 @@ from absl import app
 from absl import flags
 import numpy as np
 from tqdm import tqdm
-import pybullet as p  # pytype: disable=import-error
+import pybullet as p
+from locomotion.agents.model import StochasticPolicy  # pytype: disable=import-error
 
 from locomotion.envs import env_builder
 from locomotion.robots import a1
@@ -130,4 +131,36 @@ def main():
 
         total_step += 1
 
-main()
+
+def demo(exp_path: str) -> None:
+    with open(exp_path + 'config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    policy = StochasticPolicy(
+        config['model_config'],
+        torch.device('cpu')
+    )
+    policy.load_state_dict(torch.load(exp_path + 'policy_best'))
+    env = env_builder.build_regular_env(robot_class=a1.A1,
+                                        motor_control_mode=robot_config.MotorControlMode.TORQUE,
+                                        enable_rendering=True,
+                                        on_rack=False,
+                                        wrap_trajectory_generator=False)
+
+    for epi in range(1000):
+        done = False
+        obs = env.reset()
+        episode_r = 0
+        episode_step = 0
+        while not done:
+            a = policy.act(obs, False)
+            obs, r, done, info = env.step(a * config['manual_action_bond'])
+            episode_r += r
+            episode_step += 1
+        
+        print(f"| Episode {epi} | Step {episode_step} | Return {episode_r}")
+
+
+
+#main()
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/sac_forward_task/05-03_08-44/')
