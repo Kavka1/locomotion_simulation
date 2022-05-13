@@ -29,13 +29,14 @@ class Worker(object):
         rollout_episodes: int,
         action_bound: int,
         manual_action_scale: int,
+        control_mode = robot_config.MotorControlMode.TORQUE
     ) -> None:
         self.id = worker_id
         self.policy = FixStdGaussianPolicy(o_dim, a_dim, policy_hiddens, action_std, torch.device('cpu'))
         self.value = VFunction(o_dim, value_hiddens).to(torch.device('cpu'))
         self.env = build_regular_env(
             robot_class=a1.A1,
-            motor_control_mode=robot_config.MotorControlMode.TORQUE,
+            motor_control_mode=control_mode,
             enable_rendering=False,
             on_rack=False
         )
@@ -70,7 +71,19 @@ class Worker(object):
                 a = a.detach().numpy()
                 
                 clipped_a = np.clip(a, -self.action_bound, self.action_bound)
-                obs_, r, done, info = self.env.step(clipped_a * self.action_scale)
+                
+                if isinstance(self.action_scale, List):
+                    action = np.array([
+                            (self.action_scale[0][i] + self.action_scale[1][i]) / 2 + 
+                            (self.action_scale[1][i] - self.action_scale[0][i]) / 2 * clipped_a[i] 
+                            for i in range(len(clipped_a))
+                        ],dtype=np.float64)
+                elif isinstance(self.action_scale, float):
+                    action = clipped_a * self.action_scale
+                else:
+                    raise ValueError(f"Invalid action scale : {self.action_scale}")
+
+                obs_, r, done, info = self.env.step(action)
                 
                 obs_seq.append(obs)
                 a_seq.append(a)
@@ -210,7 +223,19 @@ class PPO(object):
                 obs = torch.from_numpy(obs).float().to(self.device)
                 dist = self.policy(obs)
                 a = dist.mean.cpu().detach().numpy()
-                obs, r, done, info = env.step(a * self.manual_action_scale)
+
+                if isinstance(self.manual_action_scale, List):
+                    action = np.array([
+                            (self.manual_action_scale[0][i] + self.manual_action_scale[1][i]) / 2 + 
+                            (self.manual_action_scale[1][i] - self.manual_action_scale[0][i]) / 2 * a[i] 
+                            for i in range(len(a))
+                        ], dtype=np.float64)
+                elif isinstance(self.manual_action_scale, float):
+                    action = a * self.manual_action_scale
+                else:
+                    raise ValueError(f"Invalid action scale : {self.manual_action_scale}")
+
+                obs, r, done, info = env.step(action)
                 score += r
                 steps += 1
         return score / num_episodes, steps
