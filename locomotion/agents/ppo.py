@@ -38,7 +38,8 @@ class Worker(object):
             robot_class=a1.A1,
             motor_control_mode=control_mode,
             enable_rendering=False,
-            on_rack=False
+            on_rack=False,
+            wrap_trajectory_generator=False
         )
         self.gamma, self.lamda = gamma, lamda
         self.rollout_episodes = rollout_episodes

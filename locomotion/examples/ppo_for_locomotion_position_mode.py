@@ -131,6 +131,7 @@ def main():
 
         if total_iteration % config['eval_iteration_interval'] == 0:
             eval_score, eval_steps = agent.evaluation(env, config['eval_episode'])
+
             if eval_score > best_score:
                 agent.save_policy(config['exp_path'], 'best')
                 best_score = eval_score
@@ -192,4 +193,4 @@ def demo(exp_path: str) -> None:
 
 
 #main()
-demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/05-13_13-09/')
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/05-13_16-25/')
