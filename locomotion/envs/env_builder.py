@@ -48,6 +48,7 @@ def build_regular_env(robot_class,
   gym_config = locomotion_gym_config.LocomotionGymConfig(
       simulation_parameters=sim_params)
 
+  
   sensors = [
       robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True),
       robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
@@ -59,6 +60,14 @@ def build_regular_env(robot_class,
       #sensor_wrappers.HistoricSensorWrapper(robot_sensors.IMUSensor(), num_history=3),
       #sensor_wrappers.HistoricSensorWrapper(environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS), num_history=3),
   ]
+  '''
+  sensors = [
+      robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True),
+      robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
+      robot_sensors.IMUSensor(),
+      environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS)
+  ]
+  '''
 
   task = simple_forward_task.SimpleForwardTask()
 

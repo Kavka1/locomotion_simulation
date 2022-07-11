@@ -9,6 +9,9 @@ import ray
 
 from locomotion.agents.model import FixStdGaussianPolicy, VFunction
 from locomotion.agents.utils import check_path, gae_estimator, Dataset
+from locomotion.envs.env_builder import build_regular_env
+from locomotion.robots import a1
+from locomotion.robots import robot_config
 
 
 @ray.remote
@@ -16,7 +19,6 @@ class Worker(object):
     def __init__(
         self,
         worker_id: int,
-        env, 
         o_dim: int,
         a_dim: int,
         action_std: float,
@@ -27,11 +29,18 @@ class Worker(object):
         rollout_episodes: int,
         action_bound: int,
         manual_action_scale: int,
+        control_mode = robot_config.MotorControlMode.TORQUE
     ) -> None:
         self.id = worker_id
         self.policy = FixStdGaussianPolicy(o_dim, a_dim, policy_hiddens, action_std, torch.device('cpu'))
         self.value = VFunction(o_dim, value_hiddens).to(torch.device('cpu'))
-        self.env = env
+        self.env = build_regular_env(
+            robot_class=a1.A1,
+            motor_control_mode=control_mode,
+            enable_rendering=False,
+            on_rack=False,
+            wrap_trajectory_generator=False
+        )
         self.gamma, self.lamda = gamma, lamda
         self.rollout_episodes = rollout_episodes
         self.action_bound = action_bound
@@ -54,15 +63,28 @@ class Worker(object):
             obs = self.env.reset()
             done = False
             while not done:
-                a_dist = self.policy(obs)
-                value = self.value(obs)
+                obs_tensor = torch.from_numpy(obs).float()
+                a_dist = self.policy(obs_tensor)
+                value = self.value(obs_tensor)
 
                 a = a_dist.sample()
                 log_prob = a_dist.log_prob(a).detach().numpy()
                 a = a.detach().numpy()
                 
                 clipped_a = np.clip(a, -self.action_bound, self.action_bound)
-                obs_, r, done, info = self.env.step(clipped_a * self.action_scale)
+                
+                if isinstance(self.action_scale, List):
+                    action = np.array([
+                            (self.action_scale[0][i] + self.action_scale[1][i]) / 2 + 
+                            (self.action_scale[1][i] - self.action_scale[0][i]) / 2 * clipped_a[i] 
+                            for i in range(len(clipped_a))
+                        ],dtype=np.float64)
+                elif isinstance(self.action_scale, float):
+                    action = clipped_a * self.action_scale
+                else:
+                    raise ValueError(f"Invalid action scale : {self.action_scale}")
+
+                obs_, r, done, info = self.env.step(action)
                 
                 obs_seq.append(obs)
                 a_seq.append(a)
@@ -110,10 +132,10 @@ class PPO(object):
         self.temperature_coef = config['temperature_coef']
         self.num_epoch = config['num_epoch']
         self.batch_size = config['batch_size']
-        self.model_path = config['exp_path'] + 'models/'
         self.num_workers = config['num_workers']
         self.policy_hiddens = config['model_config']['policy_hiddens']
         self.value_hiddens = config['model_config']['value_hiddens']
+        self.num_worker_rollout = config['eval_episode']
         self.device = torch.device(config['device'])
 
         self.policy = FixStdGaussianPolicy(self.o_dim, self.a_dim, self.policy_hiddens, self.action_std, torch.device(self.device)).to(self.device)
@@ -125,24 +147,7 @@ class PPO(object):
         self.total_steps, self.total_episodes = 0, 0
         
     def _init_workers(self, env, rollout_episodes: int) -> None:
-        self.num_worker_rollout = rollout_episodes
-        for i in range(self.num_workers):
-            self.workers.append(
-                Worker.remote(
-                    i,
-                    deepcopy(env),
-                    self.o_dim,
-                    self.a_dim,
-                    self.action_std,
-                    self.policy_hiddens,
-                    self.value_hiddens,
-                    self.gamma, 
-                    self.lamda,
-                    rollout_episodes,
-                    self.action_bound,
-                    self.manual_action_scale,
-                )
-            )
+        raise NotImplementedError("Initialize workers in the main loop")
 
     def roll_update(self, ) -> Tuple[float, List, float, float]:
         policy_state_dict_remote = ray.put(deepcopy(self.policy).to(torch.device('cpu')).state_dict())
@@ -219,14 +224,26 @@ class PPO(object):
                 obs = torch.from_numpy(obs).float().to(self.device)
                 dist = self.policy(obs)
                 a = dist.mean.cpu().detach().numpy()
-                obs, r, done, info = env.step(a * self.manual_action_scale)
+
+                if isinstance(self.manual_action_scale, List):
+                    action = np.array([
+                            (self.manual_action_scale[0][i] + self.manual_action_scale[1][i]) / 2 + 
+                            (self.manual_action_scale[1][i] - self.manual_action_scale[0][i]) / 2 * a[i] 
+                            for i in range(len(a))
+                        ], dtype=np.float64)
+                elif isinstance(self.manual_action_scale, float):
+                    action = a * self.manual_action_scale
+                else:
+                    raise ValueError(f"Invalid action scale : {self.manual_action_scale}")
+
+                obs, r, done, info = env.step(action)
                 score += r
                 steps += 1
         return score / num_episodes, steps
     
-    def save_policy(self, remark: str) -> None:
-        check_path(self.model_path)
-        model_path = self.model_path + f'policy_{remark}'
+    def save_policy(self, exp_path: str, remark: str) -> None:
+        check_path(exp_path)
+        model_path = exp_path + f'policy_{remark}'
         torch.save(self.policy.state_dict(), model_path)
         print(f"------- Policy saved to {model_path} ----------")
     

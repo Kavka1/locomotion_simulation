@@ -1,0 +1,29 @@
+action_std: 0.3
+batch_size: 256
+device: cpu
+eval_episode: 10
+eval_iteration_interval: 1
+exp_path: /home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task/05-03_14-26/
+gamma: 0.99
+lamda: 0.95
+lr: 0.0003
+manual_action_scale: 10
+max_timesteps: 20000000
+model_config:
+  a_dim: 12
+  a_max: 1.0
+  a_min: -1.0
+  o_dim: 93
+  policy_hiddens:
+  - 256
+  - 256
+  value_hiddens:
+  - 256
+  - 256
+num_epoch: 20
+num_workers: 10
+ratio_clip: 0.25
+result_path: /home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task/
+seed: 10
+tau: 0.001
+temperature_coef: 0.1

@@ -9,14 +9,15 @@ from absl import app
 from absl import flags
 import numpy as np
 from tqdm import tqdm
-import pybullet as p  # pytype: disable=import-error
+import pybullet as p
+from locomotion.agents.model import FixStdGaussianPolicy  # pytype: disable=import-error
 
 from locomotion.envs import env_builder
 from locomotion.robots import a1
 from locomotion.robots import laikago
 from locomotion.robots import robot_config
 
-from locomotion.agents.ppo import PPO
+from locomotion.agents.ppo import PPO, Worker
 from locomotion.agents.utils import check_path
 
 
@@ -53,6 +54,8 @@ def main():
         'manual_action_scale': 1,
         'lr': 0.0003,
         'gamma': 0.99,
+        'lamda': 0.95,
+
         'tau': 0.005,
         'action_std': 0.4,
         'ratio_clip': 0.25,
@@ -63,9 +66,10 @@ def main():
         'train_policy_delay': 2,
         'device': 'cuda',
         'max_timesteps': 10000000,
+        
         'eval_iteration_interval': 1,
         'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task_positon_mode/'
+        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task_torque_mode/'
     }
     
     np.random.seed(config['seed'])
@@ -77,8 +81,7 @@ def main():
     check_path(config['exp_path'])
     logger = SummaryWriter(config['exp_path'])
 
-    robot = a1.A1
-    env = env_builder.build_regular_env(robot,
+    env = env_builder.build_regular_env(robot_class=a1.A1,
                                         motor_control_mode=robot_config.MotorControlMode.TORQUE,
                                         enable_rendering=False,
                                         on_rack=False,
@@ -93,23 +96,40 @@ def main():
         yaml.safe_dump(config, f, indent=2)
 
     agent = PPO(config)
-    agent._init_workers(env, config['eval_episode'])
+    # Initialize workers
+    for i in range(agent.num_workers):
+        agent.workers.append(
+            Worker.remote(
+                i,
+                agent.o_dim,
+                agent.a_dim,
+                agent.action_std,
+                agent.policy_hiddens,
+                agent.value_hiddens,
+                agent.gamma, 
+                agent.lamda,
+                agent.num_worker_rollout,
+                agent.action_bound,
+                agent.manual_action_scale,
+            )
+        )
 
     total_step, total_episode, total_iteration = 0, 0, 0
     best_score = 0
     while total_step < config['max_timesteps']:
         train_score, worker_scores, loss_pi, loss_v = agent.roll_update()
 
+        take_steps = agent.total_steps - total_step
         total_step = agent.total_steps
         total_episode = agent.total_episodes
 
         if total_iteration % config['eval_iteration_interval'] == 0:
-            eval_score = agent.evaluation(env, config['eval_episode'])
+            eval_score, eval_steps = agent.evaluation(env, config['eval_episode'])
             if eval_score > best_score:
                 agent.save_policy(config['exp_path'], 'best')
                 best_score = eval_score
 
-            print(f"| Step: {total_step} | Episode: {total_episode} | Eval_Return: {eval_score} | Loss_pi: {loss_pi} | Loss_v: {loss_v}")
+            print(f"| Step: {total_step} | Episode: {total_episode} | Take_Step: {take_steps} | Eval_Return: {eval_score} | Loss_pi: {loss_pi} | Loss_v: {loss_v}")
             logger.add_scalar('Eval/Train_Return', train_score, total_step)
             logger.add_scalar('Eval/Eval_Return', eval_score, total_step)
             logger.add_scalar('Train/loss_pi', loss_pi, total_step)
@@ -117,4 +137,40 @@ def main():
 
         total_iteration += 1
 
-main()
+
+def demo(exp_path: str) -> None:
+    with open(exp_path + 'config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    policy = FixStdGaussianPolicy(
+        config['model_config']['o_dim'],
+        config['model_config']['a_dim'],
+        config['model_config']['policy_hiddens'],
+        config['action_std'],
+        torch.device('cpu')
+    )
+    policy.load_state_dict(torch.load(exp_path + 'policy_best'))
+    env = env_builder.build_regular_env(robot_class=a1.A1,
+                                        motor_control_mode=robot_config.MotorControlMode.TORQUE,
+                                        enable_rendering=True,
+                                        on_rack=False,
+                                        wrap_trajectory_generator=False)
+
+    for epi in range(1000):
+        done = False
+        obs = env.reset()
+        episode_r = 0
+        episode_step = 0
+        while not done:
+            a_dist = policy(torch.from_numpy(obs).float())
+            a = a_dist.mean.detach().numpy()
+            obs, r, done, info = env.step(a * config['manual_action_scale'])
+            episode_r += r
+            episode_step += 1
+        
+        print(f"| Episode {epi} | Step {episode_step} | Return {episode_r}")
+
+
+
+#main()
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task/05-03_14-26/')
