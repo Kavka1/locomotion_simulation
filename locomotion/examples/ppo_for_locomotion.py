@@ -23,7 +23,7 @@ from locomotion.agents.utils import check_path
 
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('robot_type', 'A1', ['A1', 'Laikago'], 'Robot Type.')
-flags.DEFINE_enum('motor_control_mode', 'Torque',
+flags.DEFINE_enum('motor_control_mode', 'Position',
                   ['Torque', 'Position', 'Hybrid'], 'Motor Control Mode.')
 flags.DEFINE_bool('on_rack', False, 'Whether to put the robot on rack.')
 flags.DEFINE_string('video_dir', None,
@@ -43,29 +43,29 @@ def main():
         'model_config': {
             'o_dim': None,
             'a_dim': None,
-            'policy_hidden_layers': [256, 256],
-            'value_hidden_layers': [256, 256],
+            'policy_hidden_layers': [128, 128, 128],
+            'value_hidden_layers': [128, 128, 128],
             'a_min': -1.0,
             'a_max': 1.0,
         },
         'seed': 10,
         'num_workers': 10,
-        'manual_action_scale': 10,
+        'manual_action_scale': 1,
         'lr': 0.0003,
         'gamma': 0.99,
-        'tau': 0.001,
+        'tau': 0.005,
         'action_std': 0.4,
         'ratio_clip': 0.25,
         'temperature_coeff': 0.1,
         'num_epoch': 10,
-        'batch_size': 512,
+        'batch_size': 256,
         'initial_alpha': 10,
         'train_policy_delay': 2,
-        'device': 'cpu',
-        'max_timesteps': 2000000,
+        'device': 'cuda',
+        'max_timesteps': 10000000,
         'eval_iteration_interval': 1,
         'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task/'
+        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task_positon_mode/'
     }
     
     np.random.seed(config['seed'])
@@ -82,7 +82,8 @@ def main():
                                         motor_control_mode=robot_config.MotorControlMode.TORQUE,
                                         enable_rendering=False,
                                         on_rack=False,
-                                        wrap_trajectory_generator=False)
+                                        wrap_trajectory_generator=False,
+                                        enable_clip_motor_commands=True)
 
     config['model_config'].update({
         'o_dim': env.observation_space.shape[0],

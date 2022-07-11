@@ -32,7 +32,8 @@ def build_regular_env(robot_class,
                       enable_rendering=False,
                       on_rack=False,
                       action_limit=(0.75, 0.75, 0.75),
-                      wrap_trajectory_generator=True):
+                      wrap_trajectory_generator=True,
+                      enable_clip_motor_commands=False):
 
   sim_params = locomotion_gym_config.SimulationParameters()
   sim_params.enable_rendering = enable_rendering
@@ -41,17 +42,22 @@ def build_regular_env(robot_class,
   sim_params.num_action_repeat = 10
   sim_params.enable_action_interpolation = False
   sim_params.enable_action_filter = False
-  sim_params.enable_clip_motor_commands = False
+  sim_params.enable_clip_motor_commands = enable_clip_motor_commands          # default: False
   sim_params.robot_on_rack = on_rack
 
   gym_config = locomotion_gym_config.LocomotionGymConfig(
       simulation_parameters=sim_params)
 
   sensors = [
-      sensor_wrappers.HistoricSensorWrapper(robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True), num_history=3),
-      sensor_wrappers.HistoricSensorWrapper(robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS), num_history=3),
-      sensor_wrappers.HistoricSensorWrapper(robot_sensors.IMUSensor(), num_history=3),
-      sensor_wrappers.HistoricSensorWrapper(environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS), num_history=3),
+      robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True),
+      robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
+      robot_sensors.IMUSensor(),
+      environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS),
+
+      #sensor_wrappers.HistoricSensorWrapper(robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True), num_history=3),
+      #sensor_wrappers.HistoricSensorWrapper(robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS), num_history=3),
+      #sensor_wrappers.HistoricSensorWrapper(robot_sensors.IMUSensor(), num_history=3),
+      #sensor_wrappers.HistoricSensorWrapper(environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS), num_history=3),
   ]
 
   task = simple_forward_task.SimpleForwardTask()
