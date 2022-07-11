@@ -53,6 +53,7 @@ def build_regular_env(robot_class,
       robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True),
       robot_sensors.MotorAngleSensor(num_motors=a1.NUM_MOTORS),
       robot_sensors.IMUSensor(),
+      robot_sensors.FootContactSensor(),
       environment_sensors.LastActionSensor(num_actions=a1.NUM_MOTORS),
 
       #sensor_wrappers.HistoricSensorWrapper(robot_sensors.BaseDisplacementSensor(convert_to_local_frame=True), num_history=3),

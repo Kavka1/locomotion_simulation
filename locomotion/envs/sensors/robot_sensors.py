@@ -340,6 +340,34 @@ class BasePositionSensor(sensor.BoxSpaceSensor):
   def _get_observation(self) -> _ARRAY:
     return self._robot.GetBasePosition()
 
+
+class FootContactSensor(sensor.BoxSpaceSensor):
+  """A sensor that reads the base position of the Minitaur robot."""
+
+  def __init__(self,
+               lower_bound: _FLOAT_OR_ARRAY = 0,
+               upper_bound: _FLOAT_OR_ARRAY = 1,
+               name: typing.Text = "FootContact",
+               dtype: typing.Type[typing.Any] = np.float64) -> None:
+    """Constructs FootContactSensor.
+
+    Args:
+      lower_bound: the lower bound of the base position of the robot.
+      upper_bound: the upper bound of the base position of the robot.
+      name: the name of the sensor
+      dtype: data type of sensor value
+    """
+    super(FootContactSensor, self).__init__(
+        name=name,
+        shape=(4,), 
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        dtype=dtype)
+
+  def _get_observation(self) -> _ARRAY:
+    return self._robot.GetFootContacts()
+
+
 class PoseSensor(sensor.BoxSpaceSensor):
   """A sensor that reads the (x, y, theta) of a robot."""
 

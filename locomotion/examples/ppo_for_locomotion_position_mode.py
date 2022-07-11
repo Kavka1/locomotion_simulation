@@ -41,8 +41,8 @@ def main():
         'model_config': {
             'o_dim': None,
             'a_dim': None,
-            'policy_hidden_layers': [128, 128, 128],
-            'value_hidden_layers': [128, 128, 128],
+            'policy_hiddens': [128, 128, 128],
+            'value_hiddens': [128, 128, 128],
             'a_min': -1.0,
             'a_max': 1.0,
         },
@@ -64,19 +64,18 @@ def main():
         ],
         'lr': 0.0003,
         'gamma': 0.99,
+        'lamda': 0.95,
         'tau': 0.005,
-        'action_std': 0.4,
+        'action_std': 0.2,
         'ratio_clip': 0.25,
-        'temperature_coeff': 0.1,
+        'temperature_coef': 0.1,
         'num_epoch': 10,
         'batch_size': 256,
-        'initial_alpha': 10,
-        'train_policy_delay': 2,
         'device': 'cuda',
-        'max_timesteps': 10000000,
-        'eval_iteration_interval': 1,
+        'max_timesteps': 20000000,
+        'eval_iteration_interval': 5,
         'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_forward_task_positon_mode/'
+        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/'
     }
     
     np.random.seed(config['seed'])
@@ -194,5 +193,5 @@ def demo(exp_path: str) -> None:
 
 
 
-#main()
-demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/05-13_16-25/')
+main()
+#demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/05-13_16-25/')
