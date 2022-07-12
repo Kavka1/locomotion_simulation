@@ -19,6 +19,7 @@ from locomotion.envs.env_wrappers import observation_dictionary_to_array_wrapper
 from locomotion.envs.env_wrappers import trajectory_generator_wrapper_env
 from locomotion.envs.env_wrappers import simple_openloop
 from locomotion.envs.env_wrappers import simple_forward_task
+from locomotion.envs.env_wrappers import formal_forward_task
 from locomotion.envs.sensors import robot_sensors, sensor
 from locomotion.envs.sensors import sensor_wrappers
 from locomotion.envs.sensors import environment_sensors
@@ -70,7 +71,7 @@ def build_regular_env(robot_class,
   ]
   '''
 
-  task = simple_forward_task.SimpleForwardTask()
+  task = formal_forward_task.FormalForwardTask()
 
   env = locomotion_gym_env.LocomotionGymEnv(gym_config=gym_config,
                                             robot_class=robot_class,
