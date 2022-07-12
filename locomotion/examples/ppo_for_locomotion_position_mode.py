@@ -193,5 +193,5 @@ def demo(exp_path: str) -> None:
 
 
 
-main()
-#demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/05-13_16-25/')
+#main()
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/07-12_08-40/')
