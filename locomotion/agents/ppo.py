@@ -29,7 +29,7 @@ class Worker(object):
         rollout_episodes: int,
         action_bound: int,
         manual_action_scale: int,
-        control_mode = robot_config.MotorControlMode.TORQUE
+        control_mode,
     ) -> None:
         self.id = worker_id
         self.policy = FixStdGaussianPolicy(o_dim, a_dim, policy_hiddens, action_std, torch.device('cpu'))
@@ -224,6 +224,7 @@ class PPO(object):
                 obs = torch.from_numpy(obs).float().to(self.device)
                 dist = self.policy(obs)
                 a = dist.mean.cpu().detach().numpy()
+                a = np.clip(a, -self.action_bound, self.action_bound)
 
                 if isinstance(self.manual_action_scale, List):
                     action = np.array([

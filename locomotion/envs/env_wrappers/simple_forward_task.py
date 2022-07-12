@@ -17,6 +17,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from turtle import pos
 
 import numpy as np
 
@@ -53,8 +54,20 @@ class SimpleForwardTask(object):
        terminates early.
     """
     rot_quat = env.robot.GetBaseOrientation()
+    pos      = env.robot.GetBasePosition()
+    rpy      = env.robot.GetBaseRollPitchYaw()
     rot_mat = env.pybullet_client.getMatrixFromQuaternion(rot_quat)
-    return rot_mat[-1] < 0.85 or self.episode_step > self._max_episode_len
+
+    # 0.28 < height < 0.6 
+    # |roll| < pi/2 * 0.4 
+    # |pitch| < pi/2 * 0.2
+    notdone = pos[-1] > 0.18 and \
+              pos[-1] < 0.6 and \
+              abs(rpy[0]) < 0.628 and \
+              abs(rpy[1]) < 0.314 and \
+              rot_mat[-1] >= 0.85 and \
+              self.episode_step <= self._max_episode_len
+    return not notdone
 
 
   def reward(self, env):

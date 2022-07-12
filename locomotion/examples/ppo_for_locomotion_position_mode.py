@@ -164,6 +164,8 @@ def demo(exp_path: str) -> None:
                                         on_rack=False,
                                         wrap_trajectory_generator=False)
 
+    a_bound = config['model_config']['a_max']
+
     for epi in range(1000):
         done = False
         obs = env.reset()
@@ -172,6 +174,7 @@ def demo(exp_path: str) -> None:
         while not done:
             a_dist = policy(torch.from_numpy(obs).float())
             a = a_dist.mean.detach().numpy()
+            a = np.clip(a, -a_bound, a_bound)
 
             if isinstance(config['manual_action_scale'], List):
                 action = np.array([
@@ -194,4 +197,4 @@ def demo(exp_path: str) -> None:
 
 
 #main()
-demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/07-12_08-40/')
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/07-12_15-24/')
