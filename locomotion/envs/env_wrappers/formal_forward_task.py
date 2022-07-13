@@ -27,13 +27,12 @@ class FormalForwardTask(object):
   def __init__(self):
     """Initializes the task."""
     self.current_base_pos   = np.zeros(3)
-    self.current_rpy        = np.zeros[3]
+    self.current_rpy        = np.zeros(3)
     self.current_motor_ang  = None
 
     self.last_base_pos      = np.zeros(3)
     self.last_rpy           = np.zeros(3)
     self.last_motor_ang     = None
-
 
     self.episode_step = 0
     self._max_episode_len = 1000
@@ -79,11 +78,11 @@ class FormalForwardTask(object):
 
     # 0.28 < height < 0.6 
     # |roll| < pi/2 * 0.4 
-    # |pitch| < pi/2 * 0.2
-    notdone = pos[-1] > 0.18 and \
-              pos[-1] < 0.6 and \
-              abs(rpy[0]) < 0.628 and \
-              abs(rpy[1]) < 0.314 and \
+    # |yaw|  < pi/2 * 0.4
+    notdone = pos[-1] > 0.25 and \
+              pos[-1] < 0.7 and \
+              abs(rpy[0]) < 1.256 and \
+              abs(rpy[1]) < 1.256 and \
               rot_mat[-1] >= 0.85 and \
               self.episode_step <= self._max_episode_len
     return not notdone
@@ -98,13 +97,13 @@ class FormalForwardTask(object):
     v_z = self.current_base_pos[2] - self.last_base_pos[2]
     
     w_r = self.current_rpy[0] - self.last_rpy[0]
-    w_y = self.current_rpy[1] - self.last_rpy[1]
-    w_p = self.current_rpy[2] - self.last_rpy[2]
+    w_p = self.current_rpy[1] - self.last_rpy[1]
+    w_y = self.current_rpy[2] - self.last_rpy[2]
 
     motor_angle_speed = self.current_motor_ang - self.last_motor_ang
 
     # x-coordinate velocity
-    forward_r                           = np.min(self.current_base_pos[0] - self.last_base_pos[0], 0.35)
+    forward_r                           = min(self.current_base_pos[0] - self.last_base_pos[0], 0.35)
     # lateral movement penalty
     lateral_movement_and_rotation_r     = - np.linalg.norm([v_y], 2) - np.linalg.norm([w_y], 2)
     # z-coordinate movement penalty
@@ -116,11 +115,14 @@ class FormalForwardTask(object):
     # action magnitude
     action_magnitude_r                  = - np.linalg.norm(last_action, 2)
 
-    reward =  20 * forward_r \
-            + 21 * lateral_movement_and_rotation_r \
-            + 0.07 * action_magnitude_r \
-            + 0.002 * motor_angle_speed_r \
-            + 1.5 * roll_pitch_r \
-            + 2.0 * z_axis_vel_r
+    main_reward = 20 * forward_r
 
-    return reward
+    constraint_reward = 0
+    constraint_reward += 21 * lateral_movement_and_rotation_r
+    constraint_reward += 0.07 * action_magnitude_r
+    constraint_reward += 0.002 * motor_angle_speed_r
+    constraint_reward += 1.5 * roll_pitch_r
+    constraint_reward += 2.0 * z_axis_vel_r
+
+    #reward += 0.01 # alive reward
+    return {'main': main_reward, 'constrain': constraint_reward}

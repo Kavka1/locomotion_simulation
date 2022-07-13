@@ -9,7 +9,7 @@ from absl import flags
 import numpy as np
 from locomotion.agents.model import FixStdGaussianPolicy  # pytype: disable=import-error
 
-from locomotion.envs import env_builder
+from locomotion_simulation.locomotion.envs import env_builder
 from locomotion.robots import a1
 from locomotion.robots import laikago
 from locomotion.robots import robot_config
@@ -62,20 +62,24 @@ def main():
                 0.80285144, 4.1887903, -0.91629785
             ]
         ],
+        'initial_tradeoff': 0.001,
+        'tradeoff_decay': 0.999,
+
         'lr': 0.0003,
         'gamma': 0.99,
         'lamda': 0.95,
         'tau': 0.005,
-        'action_std': 0.2,
+        'action_std': 0.4,
         'ratio_clip': 0.25,
         'temperature_coef': 0.1,
         'num_epoch': 10,
         'batch_size': 256,
-        'device': 'cuda',
-        'max_timesteps': 20000000,
+        'device': 'cpu',
+        'max_timesteps': 40000000,
         'eval_iteration_interval': 5,
-        'eval_episode': 10,
-        'result_path': '/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/'
+        'save_iteration_interval': 1000,
+        'eval_episode': 5,
+        'result_path': '/data/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_formal_forward_task/'
     }
     
     np.random.seed(config['seed'])
@@ -92,7 +96,7 @@ def main():
                                         enable_rendering=False,
                                         on_rack=False,
                                         wrap_trajectory_generator=False,
-                                        enable_clip_motor_commands=True)
+                                        )
 
     config['model_config'].update({
         'o_dim': env.observation_space.shape[0],
@@ -122,28 +126,35 @@ def main():
         )
 
     total_step, total_episode, total_iteration = 0, 0, 0
-    best_score = 0
+    best_score = -100
     while total_step < config['max_timesteps']:
-        train_score, worker_scores, loss_pi, loss_v = agent.roll_update()
+        train_score, worker_scores, loss_pi, loss_v, tradeoff = agent.roll_update()
 
         take_steps = agent.total_steps - total_step
         total_step = agent.total_steps
         total_episode = agent.total_episodes
 
         if total_iteration % config['eval_iteration_interval'] == 0:
-            eval_score, eval_steps = agent.evaluation(env, config['eval_episode'])
+            eval_score, vel_score, eval_steps = agent.evaluation(env, config['eval_episode'])
 
             if eval_score > best_score:
                 agent.save_policy(config['exp_path'], 'best')
                 best_score = eval_score
 
-            print(f"| Step: {total_step} | Episode: {total_episode} | Take_Step: {take_steps} | Eval_Return: {eval_score} | Loss_pi: {loss_pi} | Loss_v: {loss_v}")
+            print(f"| Step: {total_step} | Episode: {total_episode} | Eval_Step: {eval_steps} | Eval_Return: {eval_score} | Vel score: {vel_score} | Tradeoff: {tradeoff} | Loss_pi: {loss_pi} | Loss_v: {loss_v}")
             logger.add_scalar('Eval/Train_Return', train_score, total_step)
             logger.add_scalar('Eval/Eval_Return', eval_score, total_step)
+            logger.add_scalar('Eval/Vel_Return', vel_score, total_step)
+            logger.add_scalar('Eval/Tradeoff', tradeoff, total_step)
             logger.add_scalar('Train/loss_pi', loss_pi, total_step)
             logger.add_scalar('Train/loss_v', loss_v, total_step)
 
+        if total_iteration % config['save_iteration_interval'] == 0:
+            agent.save_policy(config['exp_path'], f'{total_iteration}')
+
         total_iteration += 1
+    
+    agent.save_policy(config['exp_path'], 'final')
 
 
 def demo(exp_path: str) -> None:
@@ -164,8 +175,6 @@ def demo(exp_path: str) -> None:
                                         on_rack=False,
                                         wrap_trajectory_generator=False)
 
-    a_bound = config['model_config']['a_max']
-
     for epi in range(1000):
         done = False
         obs = env.reset()
@@ -174,7 +183,6 @@ def demo(exp_path: str) -> None:
         while not done:
             a_dist = policy(torch.from_numpy(obs).float())
             a = a_dist.mean.detach().numpy()
-            a = np.clip(a, -a_bound, a_bound)
 
             if isinstance(config['manual_action_scale'], List):
                 action = np.array([
@@ -189,7 +197,8 @@ def demo(exp_path: str) -> None:
 
 
             obs, r, done, info = env.step(action)
-            episode_r += r
+            main_r, constrain_r = r['main'], r['constrain']
+            episode_r += main_r
             episode_step += 1
         
         print(f"| Episode {epi} | Step {episode_step} | Return {episode_r}")
@@ -197,4 +206,4 @@ def demo(exp_path: str) -> None:
 
 
 #main()
-demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_forward_task/07-12_15-24/')
+demo('/home/xukang/Project/locomotion_simulation/locomotion/results/ppo_position_mode_formal_forward_task/07-13_14-08/')

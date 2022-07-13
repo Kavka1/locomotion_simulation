@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import deepcopy, copy
 from typing import List, Dict, Tuple
 import numpy as np
 import torch
@@ -46,7 +46,7 @@ class Worker(object):
         self.action_bound = action_bound
         self.action_scale = manual_action_scale
 
-    def rollout(self, policy_state_dict, value_state_dict) -> Dict:
+    def rollout(self, policy_state_dict, value_state_dict, tradeoff) -> Dict:
         self.policy.load_state_dict(policy_state_dict)
         self.value.load_state_dict(value_state_dict)
 
@@ -86,6 +86,9 @@ class Worker(object):
 
                 obs_, r, done, info = self.env.step(action)
                 
+                main_r, constrain_r = r['main'], r['constrain']
+                r = main_r + tradeoff * constrain_r
+
                 obs_seq.append(obs)
                 a_seq.append(a)
                 r_seq.append(r)
@@ -124,6 +127,9 @@ class PPO(object):
         self.action_bound = config['model_config']['a_max']
         self.manual_action_scale = config['manual_action_scale']
 
+        self.tradeoff         = config['initial_tradeoff']
+        self.tradeoff_decay   = config['tradeoff_decay']
+
         self.lr = config['lr']
         self.gamma = config['gamma']
         self.lamda = config['lamda']
@@ -152,9 +158,10 @@ class PPO(object):
     def roll_update(self, ) -> Tuple[float, List, float, float]:
         policy_state_dict_remote = ray.put(deepcopy(self.policy).to(torch.device('cpu')).state_dict())
         value_state_dict_remote = ray.put(deepcopy(self.value).to(torch.device('cpu')).state_dict())
+        tradeoff = ray.put(copy(self.tradeoff))
 
         rollout_remote = [
-            worker.rollout.remote(policy_state_dict_remote, value_state_dict_remote) 
+            worker.rollout.remote(policy_state_dict_remote, value_state_dict_remote, tradeoff) 
             for i, worker in enumerate(self.workers)
         ]
         results = ray.get(rollout_remote)
@@ -212,11 +219,14 @@ class PPO(object):
                 log_loss_v += loss_v.detach().cpu().item()
                 update_count += 1
 
-        return train_score, worker_scores, log_loss_pi / update_count, log_loss_v / update_count
+        self.tradeoff = self.tradeoff ** self.tradeoff_decay
+
+        return train_score, worker_scores, log_loss_pi / update_count, log_loss_v / update_count, self.tradeoff
     
     def evaluation(self, env, num_episodes: int) -> Tuple[float, int]:
         assert num_episodes > 0
         score, steps = 0, 0
+        vel_score = 0
         for episode in range(num_episodes):
             obs = env.reset()
             done = False
@@ -238,9 +248,14 @@ class PPO(object):
                     raise ValueError(f"Invalid action scale : {self.manual_action_scale}")
 
                 obs, r, done, info = env.step(action)
+
+                main_r, constrain_r = r['main'], r['constrain']
+                r = main_r + self.tradeoff * constrain_r
+
+                vel_score += main_r
                 score += r
                 steps += 1
-        return score / num_episodes, steps
+        return score / num_episodes, vel_score / num_episodes, steps
     
     def save_policy(self, exp_path: str, remark: str) -> None:
         check_path(exp_path)
