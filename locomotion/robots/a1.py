@@ -42,7 +42,7 @@ MOTOR_NAMES = [
     "RL_lower_joint",
 ]
 INIT_RACK_POSITION = [0, 0, 1]
-INIT_POSITION = [0, 0, 0.32]
+INIT_POSITION = [0, 0, 0.26]
 JOINT_DIRECTIONS = np.ones(12)
 HIP_JOINT_OFFSET = 0.0
 UPPER_LEG_JOINT_OFFSET = 0.0
@@ -65,11 +65,11 @@ HIP_OFFSETS = np.array([[0.183, -0.047, 0.], [0.183, 0.047, 0.],
                         [-0.183, -0.047, 0.], [-0.183, 0.047, 0.]
                         ]) + COM_OFFSET
 
-ABDUCTION_P_GAIN = 100.0
+ABDUCTION_P_GAIN = 80.0
 ABDUCTION_D_GAIN = 1.
-HIP_P_GAIN = 100.0
+HIP_P_GAIN = 80.0
 HIP_D_GAIN = 2.0
-KNEE_P_GAIN = 100.0
+KNEE_P_GAIN = 80.0
 KNEE_D_GAIN = 2.0
 
 # Bases on the readings from Laikago's default pose.
@@ -313,6 +313,52 @@ class A1(minitaur.Minitaur):
         continue
 
     return contacts
+
+  def GetBadFootContacts(self):
+    all_contacts = self._pybullet_client.getContactPoints(bodyA=self.quadruped)
+    bad_num = 0
+    for contact in all_contacts:
+      # Ignore self contacts
+      if contact[_BODY_B_FIELD_NUMBER] == self.quadruped:
+        continue
+      elif contact[_LINK_A_FIELD_NUMBER] %5 != 0 :
+        bad_num += 1
+    return bad_num
+  
+  def GetFootContactsForce(self,mode='simple'):
+    # contact state(1), normalforce(3),friction_force(3)
+    all_contacts = self._pybullet_client.getContactPoints(bodyA=self.quadruped)
+    contacts = np.zeros((4,4))
+    for contact in all_contacts:
+      # print(contact)
+      # Ignore self contacts
+      if contact[_BODY_B_FIELD_NUMBER] == self.quadruped:
+        # print('self!')
+        continue
+      try:
+        toe_link_index = self._foot_link_ids.index(
+            contact[_LINK_A_FIELD_NUMBER])
+        # contacts[toe_link_index] = True
+        contacts[toe_link_index,0]=1
+        normalForce = contact[9]*np.asarray(contact[7])
+        # frictionForce = contact[10]*np.asarray(contact[11])+contact[12]*np.asarray(contact[13])
+        # print('link:',toe_link_index,'normal:',normalForce,'friction:',frictionForce)
+        for i in range(3):
+          contacts[toe_link_index,i+1]+=normalForce[i]
+          # contacts[toe_link_index,i+4]+=frictionForce[i]
+        # print('contact:',contacts[toe_link_index])
+      except ValueError:
+        continue
+    # print('contact:',contacts)
+    simplecontact = np.zeros(8)
+    if mode == 'simple':
+        for m in range(4):
+          simplecontact[m] = contacts[m,0]
+          simplecontact[m+4] = np.linalg.norm(contacts[m,1:])/100.0
+        # print('simple',simplecontact)
+        return simplecontact
+    else:
+      return contacts.reshape(-1)
 
   def ResetPose(self, add_constraint):
     del add_constraint

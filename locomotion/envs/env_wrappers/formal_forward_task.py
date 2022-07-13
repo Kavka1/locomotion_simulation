@@ -17,6 +17,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from copy import copy
 from turtle import pos
 
 import numpy as np
@@ -33,6 +34,8 @@ class FormalForwardTask(object):
     self.last_base_pos      = np.zeros(3)
     self.last_rpy           = np.zeros(3)
     self.last_motor_ang     = None
+
+    self.last10pos          = np.zeros((10, 2))
 
     self.episode_step = 0
     self._max_episode_len = 1000
@@ -64,6 +67,9 @@ class FormalForwardTask(object):
     self.current_base_pos       = env.robot.GetBasePosition()
     self.current_rpy            = env.robot.GetBaseRollPitchYaw()
     self.current_motor_ang      = env.robot.GetMotorAngles()
+    
+    self.last10pos[1:, :]       = self.last10pos[:9, :]
+    self.last10pos[0,  :]       = copy(self.current_base_pos).reshape((1,3))
 
   def done(self, env):
     """Checks if the episode is over.
@@ -74,16 +80,18 @@ class FormalForwardTask(object):
     rot_quat = env.robot.GetBaseOrientation()
     pos      = env.robot.GetBasePosition()
     rpy      = env.robot.GetBaseRollPitchYaw()
-    rot_mat = env.pybullet_client.getMatrixFromQuaternion(rot_quat)
+    rot_mat  = env.pybullet_client.getMatrixFromQuaternion(rot_quat)
+    basestd  = np.sum(np.std(self.last10pos, 0))
 
     # 0.28 < height < 0.6 
     # |roll| < pi/2 * 0.4 
     # |yaw|  < pi/2 * 0.4
-    notdone = pos[-1] > 0.25 and \
-              pos[-1] < 0.7 and \
+    # pos[-1] > 0.25 and \
+    notdone = pos[-1] < 0.6 and \
               abs(rpy[0]) < 1.256 and \
               abs(rpy[1]) < 1.256 and \
-              rot_mat[-1] >= 0.85 and \
+              rot_mat[-1] >= 0.5 and \
+              (basestd >= 2e-4 or self.episode_step <= 10) and \
               self.episode_step <= self._max_episode_len
     return not notdone
 
